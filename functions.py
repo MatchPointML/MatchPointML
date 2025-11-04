@@ -5,7 +5,7 @@ import requests
 
 @st.cache_data(ttl='1d')
 def get_players():
-    players = pd.read_csv('./data/atp_players.csv')
+    players = pd.read_csv('./data/atp_players.csv', low_memory=False)
     players['name_full'] = players['name_first'] + ' ' + players['name_last']
     return players
 

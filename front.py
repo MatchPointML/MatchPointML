@@ -6,6 +6,26 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageOps, ImageFont
 from functions import get_player_photo, get_players
 from pathlib import Path
+import pandas as pd
+
+from model_presentation import build_feature_state, make_feature_row
+
+#=======================PREVISOES=======================
+
+import joblib
+model = joblib.load("models/tennis_winner_model.joblib")
+
+matches_list = []
+for year in range(2024, 2025):
+    m = pd.read_csv(f'./data/atp_matches_{year}.csv',low_memory=False)
+    matches_list.append(m)
+all_matches = pd.concat(matches_list, ignore_index=True)
+all_matches['tourney_date'] = pd.to_datetime(all_matches['tourney_date'], format='%Y%m%d')
+state = build_feature_state(all_matches)
+#======================================================
+
+
+
 st.set_page_config(layout="wide", page_icon=':material/sports_tennis:', page_title="Previsão de Partidas de Tênis ATP")
 
 
@@ -28,6 +48,7 @@ surface = c1.pills("Selecione o tipo de quadra", options=['Rápida', 'Saibro', '
 best_of = c2.pills("Selecione o tipo de jogo", options=['Melhor de 3', 'Melhor de 5'], default='Melhor de 3')
 
 draw_size = c3.pills("Selecione o tamanho do quadro", options=['32', '64', '128'], default='32')
+
 
 def circular_avatar(img: Image.Image, size=220) -> Image.Image:
     img = img.convert("RGBA").resize((size, size))
@@ -68,14 +89,26 @@ def mock_previsao():
     p1 = random.random()
     return p1, 1-p1
 
+def previsao_real(p1,p2, surface, best_of, draw_size):
+    context = {
+    "tourney_date": pd.Timestamp("2025-06-01"),
+    "surface": surface,
+    "best_of": best_of,
+    "draw_size": draw_size
+    }
+    features_1row = make_feature_row(player1_id=p1, player2_id=p2, context=context, state=state)
+    proba = model.predict_proba(features_1row.drop(['player1_id', 'player2_id'], axis=1))[:,1][0]
+    return proba, 1-proba
+
 if 'p1' not in st.session_state:
     st.session_state['p1'] = None
     st.session_state['p2'] = None
 
-def on_predict():
-    p1,p2 = mock_previsao()
-    st.session_state['p1'] = p1
-    st.session_state['p2'] = p2
+def on_predict(p1,p2, surface, best_of, draw_size):
+    p1,p2 = previsao_real(players[players['name_full']==player1_name]['player_id'].values[0],players[players['name_full']==player2_name]['player_id'].values[0], surface, best_of[-1], draw_size)
+    # st.session_state['p1'] = p1
+    # st.session_state['p2'] = p2
+    return p1,p2
 
 base = Image.open("images/saibro.png").convert("RGBA") if surface == 'Saibro' else Image.open("images/grama.png").convert("RGBA") if surface == 'Grama' else Image.open("images/rapida.png").convert("RGBA")
 
@@ -127,7 +160,8 @@ def draw_centered_text(im: Image.Image, text: str, cx: int, y: int):
 
 if cb.button("Prever Resultado", use_container_width=True):
     with st.spinner("Calculando previsão..."):
-        p1, p2 = mock_previsao()
+
+        p1,p2 = on_predict(player1_name,player2_name, surface, best_of, draw_size)
         st.session_state['p1'] = p1
         st.session_state['p2'] = p2
 
