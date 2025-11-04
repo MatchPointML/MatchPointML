@@ -16,7 +16,7 @@ def get_player_photo(player_name: str) -> str:
     img_start = res.text.find(" = \'", img_line_start)
     img_end = res.text.find("\';", img_start)
     img_line = res.text[img_start+4:img_end]
-    if img_line == '':
+    if img_line == '' or len(img_line)>20:
         return None
     player_name = player_name.lower()
     url = f'https://www.tennisabstract.com/photos/{player_name.replace(" ", "_")}-{img_line}.jpg'

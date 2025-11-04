@@ -120,7 +120,6 @@ def placeholder(size=220):
 
 p1_img_url = get_player_photo(player1_name)
 p2_img_url = get_player_photo(player2_name)
-
 p1_img = circular_avatar(load_image_source(p1_img_url)) if p1_img_url else placeholder()
 p2_img = circular_avatar(load_image_source(p2_img_url)) if p2_img_url else placeholder()
 
