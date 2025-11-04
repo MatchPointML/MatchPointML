@@ -16,7 +16,7 @@ import joblib
 model = joblib.load("models/tennis_winner_model.joblib")
 
 matches_list = []
-for year in range(2024, 2025):
+for year in range(2020, 2025):
     m = pd.read_csv(f'./data/atp_matches_{year}.csv',low_memory=False)
     matches_list.append(m)
 all_matches = pd.concat(matches_list, ignore_index=True)
@@ -90,6 +90,8 @@ def mock_previsao():
     return p1, 1-p1
 
 def previsao_real(p1,p2, surface, best_of, draw_size):
+    surface_translation = {'Rápida':'Hard', 'Saibro':'Clay', 'Grama':'Grass'}
+    surface = surface_translation[surface]
     context = {
     "tourney_date": pd.Timestamp("2025-06-01"),
     "surface": surface,
@@ -98,6 +100,7 @@ def previsao_real(p1,p2, surface, best_of, draw_size):
     }
     features_1row = make_feature_row(player1_id=p1, player2_id=p2, context=context, state=state)
     proba = model.predict_proba(features_1row.drop(['player1_id', 'player2_id'], axis=1))[:,1][0]
+    proba = proba*0.95 if surface == 'Clay' else proba*1.05 if surface == 'Grass' else proba
     return proba, 1-proba
 
 if 'p1' not in st.session_state:
