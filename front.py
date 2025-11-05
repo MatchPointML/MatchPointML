@@ -14,7 +14,7 @@ from model_presentation import build_feature_state, make_feature_row
 
 import joblib
 model = joblib.load("models/tennis_winner_model.joblib")
-
+st.markdown(model.feature_names_in_)
 matches_list = []
 for year in range(2020, 2025):
     m = pd.read_csv(f'./data/atp_matches_{year}.csv',low_memory=False)
@@ -99,8 +99,10 @@ def previsao_real(p1,p2, surface, best_of, draw_size):
     "draw_size": draw_size
     }
     features_1row = make_feature_row(player1_id=p1, player2_id=p2, context=context, state=state)
+    st.markdown(features_1row.columns.to_list())
+
     proba = model.predict_proba(features_1row.drop(['player1_id', 'player2_id'], axis=1))[:,1][0]
-    proba = proba*0.95 if surface == 'Clay' else proba*1.05 if surface == 'Grass' else proba
+    # proba = proba*0.95 if surface == 'Clay' else proba*1.05 if surface == 'Grass' else proba
     return proba, 1-proba
 
 if 'p1' not in st.session_state:

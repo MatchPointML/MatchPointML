@@ -48,48 +48,54 @@ def safe_mean(seq):
 # ==============================
 
 def build_feature_state(all_matches):
-    """
-    all_matches: DataFrame bruto da ATP (1968-2024...), com colunas:
-      - tourney_date (datetime), match_num, surface, round, tourney_level, best_of, draw_size
-      - winner_id, loser_id, w_ace, w_df, w_svpt, w_1stIn, w_1stWon, w_2ndWon, w_SvGms, w_bpSaved, w_bpFaced
-      - l_ace, l_df, l_svpt, l_1stIn, l_1stWon, l_2ndWon, l_SvGms, l_bpSaved, l_bpFaced
-      - winner_rank, winner_rank_points, loser_rank, loser_rank_points
-      - winner_age, loser_age, winner_ht, loser_ht
-    Retorna um dicionário "state" com tudo que precisamos para pré-jogo.
-    """
     df = all_matches.copy()
-    # normaliza nomes player1/player2 para varrer em ordem (player1 = winner nessa base)
     df.columns = [c.replace('w_', 'player1_').replace('winner_', 'player1_')
                     .replace('l_', 'player2_').replace('loser_', 'player2_')
                   for c in df.columns]
-    # ordenação crono-estável
     df = df.sort_values(["tourney_date", "match_num"], kind="mergesort").reset_index(drop=True)
 
-    # Estados
+    # Elo geral
     elo = defaultdict(lambda: 1500.0)
-    elo_hist = defaultdict(list)  # para slope
-    last_rank = {}
-    last_pts = {}
-    last_age = {}
-    last_ht = {}
+    elo_hist = defaultdict(list)
 
-    h2h = defaultdict(int)  # (a,b) -> vitórias de a sobre b
+    # Elo por superfície
+    surfaces_known = ["Hard","Clay","Grass","Carpet"]
+    elo_surface = {s: defaultdict(lambda: 1500.0) for s in surfaces_known}
+    elo_surface_hist = {s: defaultdict(list) for s in surfaces_known}
+
+    # Últimos dados "simples"
+    last_rank, last_pts, last_age, last_ht = {}, {}, {}, {}
+
+    # H2H geral e por superfície
+    h2h = defaultdict(int)
     h2h_surface = defaultdict(lambda: defaultdict(int))  # surface -> (a,b) -> vitórias
 
-    # deques de estatísticas de saque por janela k
+    # Deques de estatísticas por janela K
     Ks = [3,5,10,20,50,100]
-    k_hist = defaultdict(lambda: defaultdict(lambda: {  # player -> metric -> dict por K
+    k_hist = defaultdict(lambda: defaultdict(lambda: {
         3: deque(maxlen=3), 5: deque(maxlen=5), 10: deque(maxlen=10),
         20: deque(maxlen=20), 50: deque(maxlen=50), 100: deque(maxlen=100)
     }))
-    # métricas
     METRICS = ("p_ace","p_df","p_1stIn","p_1stWon","p_2ndWon","p_bpSaved")
+
+    # Novos: histórico de vitórias (geral e por superfície)
+    wins_hist = defaultdict(lambda: {
+        3: deque(maxlen=3), 5: deque(maxlen=5), 10: deque(maxlen=10),
+        20: deque(maxlen=20), 50: deque(maxlen=50), 100: deque(maxlen=100)
+    })
+    wins_surface_hist = {s: defaultdict(lambda: {
+        3: deque(maxlen=3), 5: deque(maxlen=5), 10: deque(maxlen=10),
+        20: deque(maxlen=20), 50: deque(maxlen=50), 100: deque(maxlen=100)
+    }) for s in surfaces_known}
 
     for r in df.itertuples(index=False):
         a = r.player1_id  # winner
         b = r.player2_id  # loser
+        surf = getattr(r, "surface", None)
+        if pd.isna(surf) or surf not in surfaces_known:
+            surf = None  # ignora superfícies fora do set conhecido
 
-        # registra infos "last known" ANTES de atualizar
+        # last known antes de atualizar
         last_rank[a] = getattr(r, "player1_rank", np.nan)
         last_rank[b] = getattr(r, "player2_rank", np.nan)
         last_pts[a]  = getattr(r, "player1_rank_points", np.nan)
@@ -99,34 +105,31 @@ def build_feature_state(all_matches):
         last_ht[a]   = getattr(r, "player1_ht", np.nan)
         last_ht[b]   = getattr(r, "player2_ht", np.nan)
 
-        # atualiza H2H (a venceu b)
+        # H2H
         h2h[(a,b)] += 1
-        surf = getattr(r, "surface", None)
-        if pd.notna(surf):
+        if surf:
             h2h_surface[surf][(a,b)] += 1
 
-        # guarda Elo pré-jogo em histórico para slope
-        elo_hist[a].append(elo[a])
-        elo_hist[b].append(elo[b])
+        # Elo pré-jogo para slope
+        elo_hist[a].append(elo[a]); elo_hist[b].append(elo[b])
+        if surf:
+            elo_surface_hist[surf][a].append(elo_surface[surf][a])
+            elo_surface_hist[surf][b].append(elo_surface[surf][b])
 
-        # computa percentuais do jogo atual para alimentar deques
+        # Alimenta deques de métricas
         def push_stats(pid, svpt, first_in, ace, dfault, first_won, second_won, bp_saved, bp_faced):
-            # taxas defensivas/ofensivas (mesmas definições do seu pipeline)
             if svpt and svpt != 0:
-                k_hist[pid]["p_ace"]     # garante estrutura
+                k_hist[pid]["p_ace"]  # garante estrutura
                 for K in Ks:
-                    k_hist[pid]["p_ace"][K].append(100 * (ace / svpt) if svpt else np.nan)
-                    k_hist[pid]["p_df"][K].append(100 * (dfault / svpt) if svpt else np.nan)
-                    k_hist[pid]["p_1stIn"][K].append(100 * (first_in / svpt) if svpt else np.nan)
-
+                    k_hist[pid]["p_ace"][K].append(100 * (ace / svpt))
+                    k_hist[pid]["p_df"][K].append(100 * (dfault / svpt))
+                    k_hist[pid]["p_1stIn"][K].append(100 * (first_in / svpt))
             if first_in and first_in != 0:
                 for K in Ks:
                     k_hist[pid]["p_1stWon"][K].append(100 * (first_won / first_in))
-
             if svpt and first_in is not None and (svpt - first_in) != 0:
                 for K in Ks:
                     k_hist[pid]["p_2ndWon"][K].append(100 * (second_won / (svpt - first_in)))
-
             if bp_faced and bp_faced != 0:
                 for K in Ks:
                     k_hist[pid]["p_bpSaved"][K].append(100 * (bp_saved / bp_faced))
@@ -140,17 +143,31 @@ def build_feature_state(all_matches):
             r.player2_1stWon, r.player2_2ndWon, r.player2_bpSaved, r.player2_bpFaced
         )
 
-        # atualiza Elo pós-jogo
-        K = K_BASE * event_importance(getattr(r, "tourney_level", "A"), getattr(r, "round", ""))
-        K *= sets_factor(getattr(r, "best_of", 3))
-        Ea = expected_score(elo[a], elo[b])
-        Eb = 1.0 - Ea
-        elo[a] = elo[a] + K * (1.0 - Ea)
-        elo[b] = elo[b] + K * (0.0 - Eb)
+        # Atualiza vitórias recentes (1 para vencedor, 0 para perdedor)
+        for K in Ks:
+            wins_hist[a][K].append(1); wins_hist[b][K].append(0)
+            if surf:
+                wins_surface_hist[surf][a][K].append(1)
+                wins_surface_hist[surf][b][K].append(0)
+
+        # Atualiza Elo geral
+        Kf = K_BASE * event_importance(getattr(r, "tourney_level", "A"), getattr(r, "round", ""))
+        Kf *= sets_factor(getattr(r, "best_of", 3))
+        Ea = expected_score(elo[a], elo[b]); Eb = 1.0 - Ea
+        elo[a] = elo[a] + Kf * (1.0 - Ea)
+        elo[b] = elo[b] + Kf * (0.0 - Eb)
+
+        # Atualiza Elo por superfície (mesmo Kf)
+        if surf:
+            Ea_s = expected_score(elo_surface[surf][a], elo_surface[surf][b]); Eb_s = 1.0 - Ea_s
+            elo_surface[surf][a] = elo_surface[surf][a] + Kf * (1.0 - Ea_s)
+            elo_surface[surf][b] = elo_surface[surf][b] + Kf * (0.0 - Eb_s)
 
     state = {
         "elo": elo,
         "elo_hist": elo_hist,
+        "elo_surface": elo_surface,
+        "elo_surface_hist": elo_surface_hist,
         "last_rank": last_rank,
         "last_pts": last_pts,
         "last_age": last_age,
@@ -159,9 +176,13 @@ def build_feature_state(all_matches):
         "h2h_surface": h2h_surface,
         "k_hist": k_hist,
         "Ks": Ks,
-        "METRICS": METRICS
+        "METRICS": METRICS,
+        "wins_hist": wins_hist,
+        "wins_surface_hist": wins_surface_hist,
+        "surfaces_known": surfaces_known
     }
     return state
+
 
 # ==============================
 # 2) Geração de 1 linha de features para X vs Y (pré-jogo)
@@ -179,21 +200,35 @@ def _elo_slope(player_id, K, state):
     seq = hist[-K:] if len(hist) >= K else hist
     return rolling_slope(seq)
 
+def _wins_count(player_id, K, state):
+    dq = state["wins_hist"][player_id][K]
+    return int(sum(dq)) if len(dq) else 0
+
+def _wins_rate(player_id, K, state):
+    dq = state["wins_hist"][player_id][K]
+    return float(np.mean(dq)) if len(dq) else np.nan
+
+def _wins_count_surface(player_id, K, sfc, state):
+    if not sfc or sfc not in state["surfaces_known"]:
+        return np.nan
+    dq = state["wins_surface_hist"][sfc][player_id][K]
+    return int(sum(dq)) if len(dq) else 0
+
+def _wins_rate_surface(player_id, K, sfc, state):
+    if not sfc or sfc not in state["surfaces_known"]:
+        return np.nan
+    dq = state["wins_surface_hist"][sfc][player_id][K]
+    return float(np.mean(dq)) if len(dq) else np.nan
+
+def _elo_surface_value(player_id, sfc, state):
+    if not sfc or sfc not in state["surfaces_known"]:
+        return np.nan
+    return state["elo_surface"][sfc].get(player_id, 1500.0)
+
+
 def make_feature_row(player1_id, player2_id, context, state):
-    """
-    Retorna um DataFrame (1 linha) com as MESMAS colunas do seu df_final.
-    context: dict com chaves mínimas:
-      - 'tourney_date' (datetime ou str yyyy-mm-dd)
-      - 'surface' (ex.: 'Hard','Clay','Grass','Carpet')
-      - 'round' (ex.: 'R32','QF','SF','F' etc.)
-      - 'tourney_level' (ex.: 'A','M','G','C')
-      - 'best_of' (3 ou 5)
-      - 'draw_size' (int)
-    IMPORTANTE: o "state" já deve estar construído APENAS com jogos ANTERIORES a essa data.
-    """
     sfc = context.get("surface", None)
 
-    # Diferenciais "básicos"
     atp_points_diff = (state["last_pts"].get(player1_id, np.nan)
                        - state["last_pts"].get(player2_id, np.nan))
     atp_rank_diff   = (state["last_rank"].get(player1_id, np.nan)
@@ -205,6 +240,10 @@ def make_feature_row(player1_id, player2_id, context, state):
     elo_diff        = (state["elo"].get(player1_id, 1500.0)
                        - state["elo"].get(player2_id, 1500.0))
 
+    # NOVO: diferencial de Elo na superfície do contexto
+    elo_surface_diff = (_elo_surface_value(player1_id, sfc, state)
+                        - _elo_surface_value(player2_id, sfc, state))
+
     h2h_diff = state["h2h"].get((player1_id, player2_id), 0) - state["h2h"].get((player2_id, player1_id), 0)
     if sfc is not None:
         h2h_surf_diff = state["h2h_surface"][sfc].get((player1_id, player2_id), 0) - \
@@ -212,9 +251,7 @@ def make_feature_row(player1_id, player2_id, context, state):
     else:
         h2h_surf_diff = 0
 
-    # janelas
     Ks = state["Ks"]
-
     vals = {
         "player1_id": player1_id,
         "player2_id": player2_id,
@@ -225,12 +262,11 @@ def make_feature_row(player1_id, player2_id, context, state):
         "age_differential": age_diff,
         "ht_differential": ht_diff,
         "elo_differential": elo_diff,
+        "elo_surface_differential": elo_surface_diff,   # NOVO
         "h2h_differential": h2h_diff,
         "h2h_surface_differential": h2h_surf_diff,
     }
 
-    # métricas percentuais por K (sempre P1 - P2)
-    # nomes precisam casar com o seu df_final
     name_map = {
         "p_ace": "p_ace_last{K}_differential",
         "p_df": "p_df_last{K}_differential",
@@ -240,36 +276,53 @@ def make_feature_row(player1_id, player2_id, context, state):
         "p_bpSaved": "p_bp_saved_last{K}_differential",
     }
     for K in Ks:
+        # métricas percentuais
         for metric, out_pat in name_map.items():
             m1 = _mean_k(player1_id, metric, K, state)
             m2 = _mean_k(player2_id, metric, K, state)
             vals[out_pat.format(K=K)] = (m1 - m2) if not (np.isnan(m1) and np.isnan(m2)) else np.nan
-        # gradiente de Elo (slope) por K
+        # gradiente de Elo geral
         vals[f"elo_gradient_{K}_differential"] = _elo_slope(player1_id, K, state) - _elo_slope(player2_id, K, state)
 
-    # ordena colunas exatamente como no seu df_final
+        # NOVO: vitórias recentes (contagem) e taxa (geral)
+        vals[f"wins_last{K}_differential"] = _wins_count(player1_id, K, state) - _wins_count(player2_id, K, state)
+        vals[f"wins_last{K}_differential"] = _wins_rate(player1_id, K, state) - _wins_rate(player2_id, K, state)
+
+    # COLUNAS: mantenha as antigas e acrescente as novas no final
     final_cols = [
         'player1_id', 'player2_id', 'best_of', 'draw_size',
         'atp_points_differential','atp_rank_differential','age_differential','ht_differential',
-        'elo_differential','h2h_differential','h2h_surface_differential',
+        'elo_differential','elo_surface_differential',
+        'h2h_differential','h2h_surface_differential',
+
         'p_ace_last3_differential','p_df_last3_differential','p_1st_in_last3_differential',
         'p_1st_won_last3_differential','p_2nd_won_last3_differential','p_bp_saved_last3_differential',
-        'elo_gradient_3_differential',
+        'elo_gradient_3_differential','elo_surface_gradient_3_differential',
+        'wins_last3_differential',
+
         'p_ace_last5_differential','p_df_last5_differential','p_1st_in_last5_differential',
         'p_1st_won_last5_differential','p_2nd_won_last5_differential','p_bp_saved_last5_differential',
-        'elo_gradient_5_differential',
+        'elo_gradient_5_differential','elo_surface_gradient_5_differential',
+        'wins_last5_differential',
+
         'p_ace_last10_differential','p_df_last10_differential','p_1st_in_last10_differential',
         'p_1st_won_last10_differential','p_2nd_won_last10_differential','p_bp_saved_last10_differential',
-        'elo_gradient_10_differential',
+        'elo_gradient_10_differential','elo_surface_gradient_10_differential',
+        'wins_last10_differential',
+
         'p_ace_last20_differential','p_df_last20_differential','p_1st_in_last20_differential',
         'p_1st_won_last20_differential','p_2nd_won_last20_differential','p_bp_saved_last20_differential',
-        'elo_gradient_20_differential',
-        'p_ace_last50_differential','p_df_last50_differential','p_1st_in_last50_differential',
-        'p_1st_won_last50_differential','p_2nd_won_last50_differential','p_bp_saved_last50_differential',
-        'elo_gradient_50_differential',
-        'p_ace_last100_differential','p_df_last100_differential','p_1st_in_last100_differential',
-        'p_1st_won_last100_differential','p_2nd_won_last100_differential','p_bp_saved_last100_differential',
-        'elo_gradient_100_differential',
+        'elo_gradient_20_differential','elo_surface_gradient_20_differential',
+        'wins_last20_differential',
     ]
     row = pd.DataFrame([vals], columns=final_cols)
     return row
+
+
+['best_of', 'draw_size', 'atp_points_differential', 'atp_rank_differential', 'age_differential', 'ht_differential', 'elo_differential', 'elo_surface_differential', 'h2h_differential', 'h2h_surface_differential', 'p_ace_last3_differential', 'p_df_last3_differential', 'p_1st_in_last3_differential', 'p_1st_won_last3_differential', 'p_2nd_won_last3_differential', 'p_bp_saved_last3_differential', 'elo_gradient_3_differential', 'elo_surface_gradient_3_differential', 'wins_last3_differential', 'p_ace_last5_differential', 'p_df_last5_differential', 'p_1st_in_last5_differential', 'p_1st_won_last5_differential', 'p_2nd_won_last5_differential', 'p_bp_saved_last5_differential', 'elo_gradient_5_differential', 'elo_surface_gradient_5_differential', 'wins_last5_differential', 'p_ace_last10_differential', 'p_df_last10_differential', 'p_1st_in_last10_differential', 'p_1st_won_last10_differential', 'p_2nd_won_last10_differential', 'p_bp_saved_last10_differential', 'elo_gradient_10_differential', 'elo_surface_gradient_10_differential', 'wins_last10_differential', 'p_ace_last20_differential', 'p_df_last20_differential', 'p_1st_in_last20_differential', 'p_1st_won_last20_differential', 'p_2nd_won_last20_differential', 'p_bp_saved_last20_differential', 'elo_gradient_20_differential', 'elo_surface_gradient_20_differential', 'wins_last20_differential']
+
+
+['best_of', 'draw_size', 'atp_points_differential', 'atp_rank_differential', 'age_differential', 'ht_differential', 'elo_differential', 'elo_surface_differential', 'h2h_differential', 'h2h_surface_differential', 'p_ace_last3_differential', 'p_df_last3_differential', 'p_1st_in_last3_differential', 'p_1st_won_last3_differential', 'p_2nd_won_last3_differential', 'p_bp_saved_last3_differential', 'elo_gradient_3_differential', 'elo_surface_gradient_3_differential', 'wins_last3_differential', 'wins_last3_differential', 'p_ace_last5_differential', 'p_df_last5_differential', 'p_1st_in_last5_differential', 'p_1st_won_last5_differential', 'p_2nd_won_last5_differential', 'p_bp_saved_last5_differential', 'elo_gradient_5_differential', 'elo_surface_gradient_5_differential', 'wins_last5_differential', 'wins_last5_differential', 'p_ace_last10_differential', 'p_df_last10_differential', 'p_1st_in_last10_differential', 'p_1st_won_last10_differential', 'p_2nd_won_last10_differential', 'p_bp_saved_last10_differential', 'elo_gradient_10_differential', 'elo_surface_gradient_10_differential', 'wins_last10_differential', 'wins_last10_differential', 'p_ace_last20_differential', 'p_df_last20_differential', 'p_1st_in_last20_differential', 'p_1st_won_last20_differential', 'p_2nd_won_last20_differential', 'p_bp_saved_last20_differential', 'elo_gradient_20_differential', 'elo_surface_gradient_20_differential', 'wins_last20_differential', 'wins_last20_differential']
+
+
+
