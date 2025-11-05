@@ -1,10 +1,12 @@
 # MatchPointML – Classificação de Partidas de Tênis com Machine Learning
 
-## Instegrantes do projeto
-Andre Soares    21.01922-3
-Bruno Lopes     20.00041-3
-Enzo Pucci      21.02093-0
-Pedro Mesquita  21.02028-0
+## Integrantes do projeto
+| Nome           | RA         |
+|----------------|-------------|
+| Andre Soares   | 21.01922-3  |
+| Bruno Lopes    | 20.00041-3  |
+| Enzo Pucci     | 21.02093-0  |
+| Pedro Mesquita | 21.02028-0  |
 
 [Apresentação](https://youtu.be/rHGtGcViNl8)
 
