@@ -5,6 +5,7 @@
 |----------------|-------------|
 | Andre Soares   | 21.01922-3  |
 | Bruno Lopes    | 20.00041-3  |
+| Caio Correia   | 21.00931-7  |
 | Enzo Pucci     | 21.02093-0  |
 | Pedro Mesquita | 21.02028-0  |
 
