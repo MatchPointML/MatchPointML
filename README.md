@@ -1,12 +1,15 @@
 # MatchPointML – Classificação de Partidas de Tênis com Machine Learning
 
-## Instegrantes do projeto
-Andre Soares    21.01922-3
-Bruno Lopes     20.00041-3
-Enzo Pucci      21.02093-0
-Pedro Mesquita  21.02028-0
+## Integrantes do projeto
+| Nome           | RA         |
+|----------------|-------------|
+| Andre Soares   | 21.01922-3  |
+| Bruno Lopes    | 20.00041-3  |
+| Caio Correia   | 21.00931-7  |
+| Enzo Pucci     | 21.02093-0  |
+| Pedro Mesquita | 21.02028-0  |
 
-[Apresentação](https://youtu.be/Dm5C24NwkgQ)
+[Apresentação](https://youtu.be/rHGtGcViNl8)
 
 ## Visão Geral do Projeto
 MatchPointML é um projeto de ciência de dados focado em prever o resultado de partidas de tênis utilizando técnicas de *Machine Learning*. O objetivo principal é treinar modelos de classificação que, dados atributos de uma partida de tênis (por exemplo, informações dos jogadores e condições do jogo), possam classificar quem será o vencedor da partida. Esse problema de predição de resultados esportivos é um caso de uso de classificação binária (vitória do Jogador A ou do Jogador B) e envolve análise de dados históricos de partidas para extrair padrões. 
