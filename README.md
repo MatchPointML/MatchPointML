@@ -10,6 +10,7 @@
 | Pedro Mesquita | 21.02028-0  |
 
 [Apresentação](https://youtu.be/rHGtGcViNl8)
+[Link para o Artigo](https://mauabr-my.sharepoint.com/:w:/g/personal/21_02028-0_maua_br/ERjOFfdhhtxJuVabxUZWiqMB_GorZ4AQoakPgCwhBXaXOA?e=ihJmUW)
 
 ## Visão Geral do Projeto
 MatchPointML é um projeto de ciência de dados focado em prever o resultado de partidas de tênis utilizando técnicas de *Machine Learning*. O objetivo principal é treinar modelos de classificação que, dados atributos de uma partida de tênis (por exemplo, informações dos jogadores e condições do jogo), possam classificar quem será o vencedor da partida. Esse problema de predição de resultados esportivos é um caso de uso de classificação binária (vitória do Jogador A ou do Jogador B) e envolve análise de dados históricos de partidas para extrair padrões. 
