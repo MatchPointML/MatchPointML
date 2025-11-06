@@ -1,10 +1,8 @@
 from io import BytesIO
-import random
-import time
 import requests
 import streamlit as st
 from PIL import Image, ImageDraw, ImageOps, ImageFont
-from functions import get_player_photo, get_players
+from functions import get_player_id, get_player_photo, get_players, previsao_real
 from pathlib import Path
 import pandas as pd
 
@@ -83,33 +81,14 @@ def load_image_source(source):
     else:
         raise ValueError("Fonte de imagem inválida")
 
-def mock_previsao():
-    time.sleep(2)
-    p1 = random.random()
-    return p1, 1-p1
 
-def previsao_real(p1,p2, surface, best_of, draw_size):
-    surface_translation = {'Rápida':'Hard', 'Saibro':'Clay', 'Grama':'Grass'}
-    surface = surface_translation[surface]
-    context = {
-    "tourney_date": pd.Timestamp("2025-06-01"),
-    "surface": surface,
-    "best_of": best_of,
-    "draw_size": draw_size
-    }
-    features_1row = make_feature_row(player1_id=p1, player2_id=p2, context=context, state=state)
-    proba = model.predict_proba(features_1row.drop(['player1_id', 'player2_id'], axis=1))[:,1][0]
-    # proba = proba*0.95 if surface == 'Clay' else proba*1.05 if surface == 'Grass' else proba
-    return proba, 1-proba
 
 if 'p1' not in st.session_state:
     st.session_state['p1'] = None
     st.session_state['p2'] = None
 
 def on_predict(p1,p2, surface, best_of, draw_size):
-    p1,p2 = previsao_real(players[players['name_full']==player1_name]['player_id'].values[0],players[players['name_full']==player2_name]['player_id'].values[0], surface, best_of[-1], draw_size)
-    # st.session_state['p1'] = p1
-    # st.session_state['p2'] = p2
+    p1,p2 = previsao_real(get_player_id(player1_name,players),get_player_id(player2_name,players), surface, best_of[-1], draw_size, model, state)
     return p1,p2
 
 base = Image.open("images/saibro.png").convert("RGBA") if surface == 'Saibro' else Image.open("images/grama.png").convert("RGBA") if surface == 'Grama' else Image.open("images/rapida.png").convert("RGBA")
